@@ -1,1 +1,73 @@
+---
+- name: Install Docker on Ubuntu Target Node
+  hosts: node1
+  become: true
+  tasks:
+    - name: Update apt package index
+      ansible.builtin.apt:
+        update_cache: yes
 
+    - name: Install packages necessary for Docker
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+        state: present
+
+    - name: Add Docker's official GPG key
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Set up the stable Docker repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable"
+        state: present
+
+    - name: Update apt package index with new Docker repo
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install Docker Engine
+      ansible.builtin.apt:
+        name: docker-ce
+        state: present
+    - name: Pull Apache Docker Image
+      docker_image:
+        name: httpd:latest  # Specify the Apache Docker image name and tag
+        source: pull  # Ensure the image is pulled from Docker Hub
+      register: docker_pull_result  # Register the result for later use
+
+    - name: Check Docker Image Pull Status
+      debug:
+        var: docker_pull_result  # Print the result of Docker image pull operation for debugging
+
+    - name: Create Persistent Volume Directory
+      file:
+        path: "/srv/www"  # Specify the directory path on the host
+        state: directory
+
+    - name: Copy HTML files to the Host
+      copy:
+        src: "/etc/ansible/index.html"  # Specify the source directory containing HTML files
+        dest: "/srv/www"  # Specify the destination directory on the host
+
+    - name: Run Apache Container
+      docker_container:
+        name: apache_container  # Specify the name of the Apache container
+        image: httpd:latest  # Specify the Docker image to use
+        state: started  # Ensure the container is started
+        restart_policy: always  # Ensure the container restarts automatically if it stops
+        ports:
+          - "8080:80"  # Expose port 8080 on the host to port 80 in the container
+        volumes:
+          - "/srv/www:/usr/local/apache2/htdocs"  # Mount the persistent volume directory into the container
+
+    - name: Configure Docker Network
+      community.general.docker_network:
+        name: apache_network
+        ipam_config:
+          - subnet: '172.168.10.0/30'
+            gateway: '172.168.10.1'
